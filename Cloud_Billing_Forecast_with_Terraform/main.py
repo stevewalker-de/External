@@ -10,17 +10,24 @@ def generate_uuid(length: int = 8) -> str:
     return "".join(random.choices(string.ascii_lowercase + string.digits, k=length))
 UUID = generate_uuid()
 
-BLAH = os.environ.get['KEY1']
-REGION = os.environ['region_']
-PROJECT_ID = os.environ['projectid_']
-DATASET_ID = os.environ['datasetid_'] 
-VIEW_NAME = os.environ['viewname_'] 
-BUCKET_NAME = os.environ['bucketname_'] 
+PROJECT_ID = os.environ['project_id']
+DATASET_ID = os.environ['dataset_id']
+BILLING_DATA_VIEW_NAME = os.environ['billing_dat_view_name']
+REGION = os.environ['region']
+                   ]
+BILLING_DATA_LOCATION_PROJECT_ID = os.environ['billing_data_location_project_id']
+BILLING_DATA_LOCATION_DATASET_ID = os.environ['billing_data_location_dataset_id']
+BILLING_DATA_LOCATION_TABLE_NAME = os.environ['billing_data_location_table_name']
+
+                    
+BUCKET_NAME = os.environ['bucket_name']
 BUCKET_URI = f"gs://{BUCKET_NAME}"
-TRAINING_DATASET_BQ_PATH = ('bq://{PROJECT_ID}.{DATASET_ID}.{VIEW_NAME}'.format(PROJECT_ID=PROJECT_ID, DATASET_ID=DATASET_ID, VIEW_NAME=VIEW_NAME))
-MODEL_DISPLAY_NAME = f"cloud-billing-forecast-model_{UUID}"
+TRAINING_DATASET_BQ_PATH = ('bq://{BILLING_DATA_LOCATION_PROJECT_ID}.{BILLING_DATA_LOCATION_DATASET_ID}.{BILLING_DATA_LOCATION_TABLE_NAME}'.format(BILLING_DATA_LOCATION_PROJECT_ID=BILLING_DATA_LOCATION_PROJECT_ID, MODEL_DISPLAY_NAME = f"cloud-billing-forecast-model_{UUID}"
+
+
+training_job = None
 time_column = "date"
-time_series_identifier_column = "project_name"
+TIME_SERIES_IDENTIFIER = "project_name"
 target_column = "cost"
 
 COLUMN_SPECS = {
@@ -34,70 +41,42 @@ COLUMN_SPECS = {
 def main():
 
     try:
-        print("blah = ", BLAH)
         print("PROJECT = ", PROJECT_ID)
         print("REGION = ", REGION)
         print("DATASET_ID = ", DATASET_ID)
-        print("VIEW_NAME = ", VIEW_NAME)
+        print("BILLING_DATA_VIEW_NAME = ", BILLING_DATA_VIEW_NAME)
         print("BUCKET_NAME = ", BUCKET_NAME)
         print(f"Starting Task main()...")
+
         init_vertex()
-        set_base_data_query()
+        
+        set_create_view_query()
+        
         run_model_build()    
-        #train_model()
+        
         print(f"Completed Task main().")
     except Exception as err:
         message = "Error: " + str(err)
         print(json.dumps({"message": message, "severity": "ERROR"}))
 
-def log_message(message):
-    
-    try:
-        global_log_fields = {}
-
-        request_is_defined = "request" in globals() or "request" in locals()
-        if request_is_defined and request:
-            trace_header = request.headers.get("X-Cloud-Trace-Context")
-
-            if trace_header and PROJECT:
-                trace = trace_header.split("/")
-                global_log_fields[
-                    "logging.googleapis.com/trace"
-                ] = f"projects/{PROJECT}/traces/{trace[0]}"
-
-        entry = dict(
-            severity="NOTICE",
-            message=message,
-            # Log viewer accesses 'component' as jsonPayload.component'.
-            component="billing-forecasting-maindotpy-main()",
-            **global_log_fields,
-        )
-
-        print(json.dumps(entry))    
-
-    except Exception as err:
-        message = "Error: " + str(err)
-        print(json.dumps({"message": message, "severity": "ERROR"}))
-
-
-def set_base_data_query():
+def set_create_view_query():
 
     try:
-        base_data_query = """
-        CREATE OR REPLACE VIEW {PROJECT_ID}.{DATASET_ID}.{VIEW_NAME} AS
+        create_view_query = """
+        CREATE OR REPLACE VIEW {}.{}.{} AS
         SELECT
           DATE(usage_start_time) date,
           project.name project_name,
           SUM(cost) AS cost
         FROM
-          `data-analytics-pocs.public.gcp_billing_export_v1_EXAMPL_E0XD3A_DB33F1`
+          {}.{}.{}
         GROUP BY
             1,
             2    
         """
 
-        base_data_query = base_data_query.format(PROJECT_ID=PROJECT_ID, DATASET_ID=DATASET_ID, VIEW_NAME=VIEW_NAME)
-        print('bq://{PROJECT_ID}.{DATASET_ID}.{VIEW_NAME}'.format(PROJECT_ID=PROJECT_ID, DATASET_ID=DATASET_ID, VIEW_NAME=VIEW_NAME))
+        create_view_query = create_view_query.format(PROJECT_ID, DATASET_ID, BILLING_DATA_VIEW_NAME, BILLING_DATA_LOCATION_PROJECT_ID, BILLING_DATA_LOCATION_DATASET_ID, BILLING_DATA_LOCATION_TABLE_NAME)
+        create_view_query
 
     except Exception as err:
         message = "Error: " + str(err)
@@ -131,15 +110,7 @@ def run_model_build():
         optimization_objective="minimize-rmse",
         column_specs=COLUMN_SPECS,
         )
-
-    except Exception as err:
-        message = "Error: " + str(err)
-        print(json.dumps({"message": message, "severity": "ERROR"}))
-
-
-def train_model():
-    
-    try:
+        
         model = training_job.run(
         dataset=dataset,
         target_column=target_column,
@@ -156,9 +127,13 @@ def train_model():
         budget_milli_node_hours=1000,
         model_display_name=MODEL_DISPLAY_NAME,
         )
+
+
     except Exception as err:
-        message = "Error: " + str(err)
+        message = "Error run_model_build:" + str(err)
         print(json.dumps({"message": message, "severity": "ERROR"}))
+
+
 
 
 # Start script
